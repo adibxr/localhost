@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>School Newsletter CMS</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' stroke='white' fill='%230077cc'%3E%3Ccircle cx='32' cy='32' r='32'/%3E%3Ctext x='32' y='43' font-size='34' text-anchor='middle' font-family='Arial'%3E✉%3C/text%3E%3C/svg%3E">
+
+  <!-- ============  CSS  ============ -->
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#f9f9f9}
+    h1{text-align:center;margin-top:0}
+    form,#newsList,#searchBar{max-width:740px;margin:0 auto}
+    input[type="text"],input[type="email"],input[type="password"],textarea{
+      width:100%;padding:12px;border:1px solid #ccc;border-radius:4px;margin-bottom:14px;font:inherit
+    }
+    button{cursor:pointer;padding:10px 28px;border:none;border-radius:4px;background:#0077cc;color:#fff;font-weight:bold}
+    button[disabled]{opacity:.55;cursor:not-allowed}
+    hr{margin:32px auto;max-width:740px}
+    .news-item{background:#fff;padding:16px;margin:16px 0;border-left:4px solid #0077cc;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+    .news-item h3{margin:0 0 4px}.news-item small{color:#555}
+    .news-item img{max-width:100%;margin:10px 0;border-radius:4px}
+    .actions{margin-top:10px;display:flex;gap:10px}
+    /* comments */
+    .comments{margin-top:12px}
+    .comment{background:#f1f1f1;padding:8px 10px;border-radius:4px;margin-top:8px;position:relative}
+    .comment strong{font-weight:600}.comment small{color:#555;font-size:.8em}
+    .delComment{background:none;border:none;color:#d11;font-size:.9em;position:absolute;top:6px;right:6px;cursor:pointer}
+    .commentForm textarea{margin-bottom:8px}
+    /* admin floating button */
+    .admin-btn{
+      position:fixed;top:16px;right:16px;width:54px;height:54px;border-radius:50%;
+      background:#0077cc;color:#fff;display:flex;align-items:center;justify-content:center;
+      font-size:26px;cursor:pointer;z-index:1200
+    }
+    /* login modal */
+    #loginModal{
+      position:fixed;inset:0;background:rgba(0,0,0,.45);
+      display:none;align-items:center;justify-content:center;z-index:1000
+    }
+    #loginBox{
+      background:#fff;padding:28px 26px;border-radius:10px;width:340px;max-width:92%;
+      box-shadow:0 12px 30px rgba(0,0,0,.3);position:relative;z-index:1010
+    }
+    #loginBox h2{margin:0 0 18px;text-align:center}
+    /* prettier file picker */
+    .file-label{
+      display:inline-block;padding:10px 16px;margin-bottom:14px;
+      background:#eef4ff;border:2px dashed #0077cc;border-radius:6px;color:#0077cc;font-weight:600;cursor:pointer;
+      transition:background .2s
+    }
+    .file-label:hover{background:#ddecff}
+    .img-preview{max-width:100%;margin-bottom:14px;border-radius:6px;display:none}
+    /* search bar */
+    #searchBar input{margin-bottom:24px;padding:12px;font-size:1rem}
+  </style>
+</head>
+<body>
+  <h1>📚 ARTICLE </h1>
+
+  <!-- Admin button -->
+  <div id="adminButton" class="admin-btn" title="Login / Logout">🔒</div>
+
+  <!-- Login modal -->
+  <div id="loginModal">
+    <div id="loginBox">
+      <h2>ADMIN LOGIN</h2>
+      <input type="email" id="loginEmail" placeholder="Email" autocomplete="username" required>
+      <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" required>
+      <button id="loginSubmit" style="width:100%">Log in</button>
+    </div>
+  </div>
+
+  <!-- Compose form (admin only) -->
+  <form id="newsForm" style="display:none">
+    <input type="text" id="title" placeholder="News Title" required>
+    <textarea id="content" rows="6" placeholder="News Content" required></textarea>
+
+    <!-- prettier file picker -->
+    <label for="image" class="file-label">📷 Add image</label>
+    <input type="file" id="image" accept="image/*" hidden>
+    <img id="imgPreview" class="img-preview" alt="chosen preview">
+
+    <button type="submit">Publish</button>
+  </form>
+
+  <!-- Search -->
+  <div id="searchBar"><input type="text" id="searchInput" placeholder="Search news…"></div>
+  <hr>
+  <section id="newsList"></section>
+
+  <!-- ============  JS  ============ -->
+  <script>
+  /******** 1. IndexedDB ********/
+  let db;
+  const request=indexedDB.open("SchoolNewsDB",2);
+  request.onupgradeneeded=e=>{
+    db=e.target.result;
+    if(!db.objectStoreNames.contains("news"))
+      db.createObjectStore("news",{keyPath:"id",autoIncrement:true});
+  };
+  request.onsuccess=()=>{db=request.result; renderNews();};
+  request.onerror=()=>console.error("❌ IndexedDB failed");
+
+  /******** 2. Admin auth ********/
+  const ADMIN={email:"admin@gmail.com",pass:"Admin@2025"};
+  const key="NEWS_isAdmin";
+  const adminBtn=document.getElementById("adminButton");
+  const loginModal=document.getElementById("loginModal");
+  const newsForm=document.getElementById("newsForm");
+
+  function isAdmin(){return localStorage.getItem(key)==="true";}
+  function updateAdminUI(){
+    newsForm.style.display=isAdmin()?"block":"none";
+    adminBtn.textContent=isAdmin()?"👤":"🔒";
+    adminBtn.title=isAdmin()?"Logout":"Login";
+  }
+  adminBtn.onclick=()=>{
+    if(isAdmin()){localStorage.removeItem(key);updateAdminUI();renderNews();}
+    else{loginModal.style.display="flex";}
+  };
+  document.getElementById("loginSubmit").onclick=()=>{
+    const em=document.getElementById("loginEmail").value.trim();
+    const pw=document.getElementById("loginPass").value;
+    if(em===ADMIN.email&&pw===ADMIN.pass){
+      localStorage.setItem(key,"true");
+      loginModal.style.display="none";
+      updateAdminUI();renderNews();
+    }else alert("Incorrect credentials");
+  };
+  /* close modal by clicking backdrop */
+  loginModal.onclick=e=>{if(e.target===loginModal)loginModal.style.display="none";};
+  updateAdminUI();
+
+  /******** 3. CRUD for posts ********/
+  function savePost(post){
+    db.transaction("news","readwrite").objectStore("news").add(post)
+      .onsuccess=()=>{newsForm.reset();imgPreview.style.display='none';renderNews();};
+  }
+  function deletePost(id){
+    db.transaction("news","readwrite").objectStore("news").delete(id).onsuccess=renderNews;
+  }
+
+  /******** 4. Image picker with preview ********/
+  const imageIn=document.getElementById("image");
+  const imgPreview=document.getElementById("imgPreview");
+  imageIn.addEventListener("change",()=>{
+    if(imageIn.files[0]){
+      const r=new FileReader();
+      r.onload=e=>{
+        imgPreview.src=e.target.result;
+        imgPreview.style.display='block';
+      };
+      r.readAsDataURL(imageIn.files[0]);
+    }else imgPreview.style.display='none';
+  });
+
+  /******** 5. Publish form ********/
+  newsForm.addEventListener("submit",e=>{
+    e.preventDefault();
+    const post={
+      title:document.getElementById("title").value.trim(),
+      content:document.getElementById("content").value.trim(),
+      date:new Date().toLocaleString(),
+      image:imgPreview.style.display==='block'?imgPreview.src:null,
+      comments:[]
+    };
+    savePost(post);
+  });
+
+  /******** 6. Comment helpers ********/
+  function addComment(postId){
+    const name=document.getElementById(`cname-${postId}`).value.trim()||"Anonymous";
+    const text=document.getElementById(`ctext-${postId}`).value.trim();
+    if(!text)return;
+    const comment={cid:Date.now(),name,text,date:new Date().toLocaleString()};
+    const tx=db.transaction("news","readwrite"),store=tx.objectStore("news");
+    store.get(postId).onsuccess=e=>{
+      const p=e.target.result;if(!p)return;
+      (p.comments=p.comments||[]).push(comment);
+      store.put(p).onsuccess=renderNews;
+    };
+  }
+  function deleteComment(postId,cid){
+    const tx=db.transaction("news","readwrite"),store=tx.objectStore("news");
+    store.get(postId).onsuccess=e=>{
+      const p=e.target.result;if(!p||!p.comments)return;
+      p.comments=p.comments.filter(c=>c.cid!==cid);
+      store.put(p).onsuccess=renderNews;
+    };
+  }
+  window.addComment=addComment;
+  window.deleteComment=deleteComment;
+
+  /******** 7. Render + search ********/
+  const newsList=document.getElementById("newsList");
+  document.getElementById("searchInput").oninput=renderNews;
+
+  function renderNews(){
+    const term=document.getElementById("searchInput").value.trim().toLowerCase();
+    newsList.innerHTML="";
+    if(!db)return;
+    db.transaction("news").objectStore("news").openCursor(null,"prev").onsuccess=e=>{
+      const cur=e.target.result;if(!cur)return;
+      const n=cur.value;
+      if(term&&!n.title.toLowerCase().includes(term)&&!n.content.toLowerCase().includes(term)){cur.continue();return;}
+
+      const art=document.createElement("div");art.className="news-item";
+      art.innerHTML=`
+        <h3>${n.title}</h3>
+        <small>${n.date}</small>
+        <p>${n.content}</p>
+        ${n.image?`<img src="${n.image}" alt="attached">`:""}
+      `;
+      /* delete article */
+      if(isAdmin()){
+        const del=document.createElement("button");del.textContent="🗑 Delete article";
+        del.onclick=()=>{if(confirm("Delete this article?"))deletePost(n.id);};
+        art.appendChild(Object.assign(document.createElement("div"),{className:"actions"})).appendChild(del);
+      }
+
+      /* comments */
+      const comWrap=document.createElement("div");comWrap.className="comments";
+      (n.comments||[]).forEach(c=>{
+        const com=document.createElement("div");com.className="comment";
+        com.innerHTML=`<strong>${c.name}</strong> <small>${c.date}</small><br>${c.text}`;
+        if(isAdmin()){
+          const btn=document.createElement("button");btn.className="delComment";btn.innerText="×";
+          btn.onclick=()=>{if(confirm("Delete this comment?"))deleteComment(n.id,c.cid);};
+          com.appendChild(btn);
+        }
+        comWrap.appendChild(com);
+      });
+
+      /* add comment form */
+      const cForm=document.createElement("form");cForm.className="commentForm";
+      cForm.innerHTML=`
+        <input type="text" id="cname-${n.id}" placeholder="Your name (optional)" autocomplete="off">
+        <textarea id="ctext-${n.id}" rows="2" placeholder="Write a comment…" required></textarea>
+        <button type="submit">Post comment</button>
+      `;
+      cForm.onsubmit=e=>{e.preventDefault();addComment(n.id);};
+      comWrap.appendChild(cForm);
+
+      art.appendChild(comWrap);
+      newsList.appendChild(art);
+      cur.continue();
+    };
+  }
+
+  /******** 8. Service‑worker (unchanged) ********/
+  if("serviceWorker" in navigator){
+    window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(console.warn));
+  }
+  </script>
+</body>
+</html>

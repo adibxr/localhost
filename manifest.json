@@ -1,0 +1,20 @@
+{
+  "name": "School Newsletter CMS",
+  "short_name": "Newsletter",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#f9f9f9",
+  "theme_color": "#0077cc",
+  "icons": [
+    {
+      "src": "/public/icon1.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/public/icon2.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
